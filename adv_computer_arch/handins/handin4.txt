@@ -1,0 +1,37 @@
+
+1. a. The main benefit of stack machine over register machine is better independence from hardware. On different platforms there can be a different number of registers, as a result it is quite complicated to implement JVM that is able to run on all platforms using register based architecture. 
+
+   b. Memory location.
+
+2. a. Structural hazard is simultaneous use of the same resource in the processor.
+
+   b. Actually, I did not understand the question. What does it mean "transformation"?
+
+   	  Maybe, if we have a code :
+   	  	A=A+293;
+   	  	if a==0 then goto Point_1;
+   	  If load and branch will execute in parallel and branch will finish first we will have a "transformation" from control hazard to data hazard.
+
+
+3. a. Suppose, there is a code:
+		A=C+D;
+		B=A+2;
+
+	The second instruction follows after first in the pipeline, so when the first instruction on the Execution stage, the second will be on ID stage and will load data from memory. The problem is that the first instruction still did not write data back, so the second instruction will load old data.  
+	This problem can be solved by introducing forwarding, data transfering after execution stage and after memory stage. As a result, when the second instruction will reach execution stage it will have a new value of A. 
+
+   b. WAW or WAR cannot occur in a simple 5-stage pipeline because the pipeline has a consecutive execution.
+
+4.	In VLIW architecture the compiler determines the order in which instructions are executed, on the other hand in superscalar architecture hardware decides what can be executed in parallel. There is limited number of execution units in superscalar architecture, on the other hand the VLIW architecture can be not compatible and it can be difficult to find necessary amount of independent instructions to execute in parallel.
+
+5. a. To prevent WAW and WAR dependencies instructions are stored in reservation stations before execution stage. If the execution unit is available and there is no RAW dependency, instruction proceeds to the execution stage, othrerwise it will wait while the data appears in reservation station and will be notified through Common Data Bus. 
+
+   b. At the end the instructions go to the reorder buffer. The ReOrder buffer is required to produce the output of instructions in the same order as they arrived to pipeline.
+
+6. Maybe after execution the output of the instruction will not go to the ReOrder buffer, as a result there will be no side effect.
+
+7. There is a history table with 1 bit in each row. 1 - take a branch, 0 - not to take a branch. So, some bits in branch-instruction PC point to the location in this table. Then the value is read from this location and the corresponding branch will be proceed or not, depending of value. If it was wrong prediction, the bit in this location changes its value to the opposite.
+
+8. 2-bit prediction has a history of previous branch instruction execution. Also, there is state machine which controls will be branch taken or not. 2-bit prediction tries to optimise the performance , the amount of wrong predictions. 
+
+9. BTB is used in the instruction fetch stage. It is a cache with index and address tag. So, when the PC arrives it finds the appropriate address tag and checks the value, if it is a hit the data field contains new PC value(where it should jump) and field which indicates was this branch taken or not. So, if there is unconditional branch instruction, there is no need to use pipeline, we should find the value in BTB, and the data field will indicate to the new PC. So, we should just swap old PC on the new PC.

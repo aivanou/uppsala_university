@@ -1,0 +1,27 @@
+1.
+	In Uniform Memory Access architecture there is uniform memory access, it means that processors connected with memory through intreconnect. In NUMA, there is separate memory for each processor, and these nodes: memory + processor  connected with each other through interconnect. The processor still can access data from different memory nodes, but it will be slower, than accessing  memory in its own region.
+
+2.
+	Instead of using bus, the directory based coherency protocol uses point to point messages. The first one relies on the bus and broadcasts signals to all processors through it. The second one uses some interconnect, and uses point to point messages.
+
+	The directory based coherency provides better scalability because instead of broadcasting signals to all processors, it uses point to poit messages to some processors. So, when there are a lot of processors, the snoop based coherence requeires a wide bandwidth, and it is expensive.
+
+3. 
+	Dir i B. It keeps track of i nodes and has additional overflow bit. When the i+1 node needs to store the same cache line, the overflow bit raises. Then, when the invalidation signal arrives to this cache line, this protocol broatcasts the INV signal to all nodes. 
+	
+	Dir i NB. It keeps track of i nodes. When the i+1 node needs to store the same cahe line, it evicts one of the current nodes with the cache line in it and adds the newly arrived node.
+
+4. 
+	Linked list is used to keep track of cache lines. The directory keeps track just of the first node. Also, additional information added to the cache lines: the pointer to the next node, that has this cache line and the pointer to the previous node, that has this cache line.
+
+5. 
+	In the message passing system  the processes communicate with each other by sending and recieving messages. In the shared memory system the process just writes or reads data from a memory location.
+
+6.
+	Program counter,Stack pointer
+
+7.
+	• MPI
+
+
+8. The red-black algorithm has a low performance. This algorithm has twice bigger amount of misses comparing to the second algorithm. It requires to call two sweep procedures(one on black another on red).

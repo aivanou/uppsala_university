@@ -1,0 +1,44 @@
+1.1 What is a false-sharing miss?
+This miss occur, when there is a cache line that is shared by two or more processors. The state parameter connected only to the cache line, as a result if a processor changes data A1, it can send invalidation signal to the bus, and another processor that used data A2(which is on the same cache line as data A1) will reload this cache line.
+
+1.2 How can false-sharing be avoided? Give two examples, one using only software techniques and one where the hardware is changed.
+
+	a. software. For example:
+		if there is a structure: struct test{int a; int b;}
+		in the code we can create two additional variables:
+			int local_a=test.a;
+			int local_b=test.b;
+		and use them, instead the structure test directly. As a result, local_a and local_b will probably point on different cache lines, conversely, test.a and test.b will probably point on the same cache line.
+
+	b. hardware. Using skewed caches or elbow caches. Decreasing the cache line.(not sure)
+
+
+3
+
+step  CPU0 CPU1 CPU2 CPU3 on_bus data_source
+0	  wr 0				  RTW	 MEM
+1   			rd 0      RTS    CPU0
+2                    wr 0 RTW    CPU0     
+3               wr 0      INV    CPU2
+4          wr 0           RTW    CPU2
+5               rd 0      RTS    CPU1
+6               wr 0      INV    CPU2
+
+
+4. MOSI protocol tries to reduce the amount of write back signals(writing back to memory), comparing to MSI protocol. In MSI protocol, if the cpu in state M and read request appeared on the bus, it should write data back to the memory. In MOSI, if the read signal appeared, the cpu can change state to O, and give the data, without writig to the main memory.
+
+5. a. 2
+   b. 2
+   c. timing dependent
+
+6. Release consintency has higher performance, but it rilies more on the programming part comparing to the sequential consistency model. So, a multiprocessor machine should implement sequential consistency instead of release consistency to avoid complicated errors and make cheaper programming layer.
+
+7. TSO works faster then Sequential consistency, instead of having one global store, each cpu has its own store buffer.
+
+8. Sequential consistency suffers of performance: in the multiprocessor environment there is parrallel execution, but with Sequential consistency all results came in a one queue, as a result this architecture becomes sequential, not truly parallell(there could be a stall in this big queue). To make truly multiprocessor enviroment, the computer architect would implement one of the weak memory models.
+
+9. I think, if the applications are correctly synchronized, weaker memory order should not affect the correctness. Suppose, pthread has a correct lock and unlock implementation and operation OP a,b should be done atomicly. 
+Lock
+OP a,b
+Unlock
+After lock operation, one thread will aquire lock, other will procrastinate and other thread will not have the opportunity to influence on the a or b variables.  So, it the best occasion, they will spin in their local caches. As a result, the weak memory order cannot affect the correctness.
