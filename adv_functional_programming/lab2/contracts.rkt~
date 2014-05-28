@@ -1,0 +1,4 @@
+
+
+(provide (contract-out [fact (-> natural-number/c
+                                 natural-number/c)]))

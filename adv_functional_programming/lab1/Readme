@@ -1,0 +1,10 @@
+1. rally.sml - Dynamic programming algorithm based on Memoization
+
+2. rally.erl - I did not find a good way to implement Dynamic algorithm. I know, there can be used an est table or gen_server. 
+	So, it is a search algorithm.
+
+3. tr_server.erl - consequetive server.
+
+4. there is only 1 property, that acceps random expressions and evaluates the response.
+	32 out of 50 bugs.
+	compile: c(bughunt,[debug_info])

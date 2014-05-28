@@ -1,0 +1,272 @@
+#lang racket
+(provide (except-out (all-from-out racket)
+                     #%app
+                     #%top
+                     #%datum
+                     > < >= <= = and not or
+                     )
+         (rename-out [app #%app]
+                     [top #%top]
+                     [datum #%datum]
+                     [my/> >]
+                     [my/< <]
+                     [my/>= >=]
+                     [my/<= <=]
+                     [my/= =]
+                     )
+         make-relation
+         table
+         table-data
+         table-col-hash
+         relation
+         show
+         project-by-numbers
+         project-table
+         project
+         restrict
+         restrict-single-entity
+         )
+
+
+(define-syntax-rule (app f arg ...)
+  (begin (cond [(procedure? f) (#%app f arg ...)]
+               [else (cons  'f (quote (arg ...)))])))
+
+
+(define-syntax-rule (top . arg)          
+  'arg)
+
+(define-syntax-rule (datum . arg)
+  (begin (#%datum . arg)))
+
+
+(struct table(cols col-hash data))
+
+(define global-env (make-hash))
+
+(define (displ lst dipslay-func)
+  (match lst
+    ['() (void)]
+    [(list row rest ...)
+     (dipslay-func row)
+     (displ rest dipslay-func)]))
+
+(define (show-table input-table)
+  (displ (table-cols input-table) (lambda(el) (display el) (display "  ")))
+  (displayln "")
+  (displ (table-data input-table) (lambda(el) (displayln el))))
+
+(define (show input)
+  (cond [(table? input) (show-table input)]
+        [else (show (hash-ref global-env input))]))
+
+(define (init-col-hash hash cols)
+  (let init-next-col  ([cols cols] [iter 0])
+    (match cols
+      ['() hash]
+      [(list first rest ...)
+       (hash-set! hash first iter)
+       (init-next-col rest (+ 1 iter))])))
+
+
+(define (conv-data data)
+  (reverse
+   (let conv-row ([data data] [ndata '()])
+     (match data
+       ['() ndata]
+       [(list first rest ...) (conv-row rest (cons (list->vector first) ndata))]))))
+
+(define (make-relation cols data)
+  (table cols (init-col-hash (make-hash) cols) (conv-data data)))
+
+(define (relation name table-data)
+  (hash-set! global-env name table-data))
+
+(define (cols-numbers col-hash cols)
+  (let check-next-col ([cols cols] [number-lst '()])
+    (match cols
+      ['() number-lst]
+      [(list first rest ...)
+       (check-next-col rest (cons (hash-ref col-hash first) number-lst))])))
+
+(define (shrink-row row number-lst) ; also we can use tail-recursion, but i do not think that there can be so many different columns
+  (reverse (match number-lst
+             ['() '()]
+             [(list first rest ...) (cons (vector-ref row first) (shrink-row row rest))])))
+
+(define (project-by-numbers rows number-lst) ; maybe we should also do reverse? (to save the order)
+  (let shrink-next-row ([rows rows] [out-rows '()])
+    (match rows
+      ['() out-rows]
+      [(list first rest ...) (shrink-next-row rest (cons (shrink-row first number-lst) out-rows))])))
+
+(define (project-table input-table cols)
+  (table (table-cols input-table) (table-col-hash input-table) (project-by-numbers (table-data input-table)  (cols-numbers (table-col-hash input-table) cols))))
+
+
+(define (project input cols)
+  (cond [(table? input) (project-table input cols)]
+        [else (project-table (hash-ref global-env input) cols)]))
+
+
+(define (restrict-process input-table op get-cell1 get-cell2)
+  (let check-next-row ([rows (table-data input-table)] [out-rows '()])
+    (match rows
+      ['() (table (table-cols input-table) (table-col-hash input-table) out-rows)]
+      [(list first rest ...)
+       (cond [(op (get-cell1 first) (get-cell2 first)) (check-next-row rest (cons first out-rows))]
+             [else (check-next-row rest out-rows)])])))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Restrict  - multiple tables
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define (restrict-table input-table condition)
+  (displayln condition)
+  (match (pre-process-condition condition)
+    [(list 'and cond1 cond2)
+     (table (table-cols input-table) (table-col-hash input-table) (intersect-rows (restrict-table input-table cond1) (restrict-table input-table cond2)))]
+    [(list 'or cond1 cond2)
+     (table (table-cols input-table) (table-col-hash input-table)  (merge-rows (restrict-table input-table cond1) (restrict-table input-table cond2)))]
+    [(list 'not cond1)
+     (table (table-cols input-table) (table-col-hash input-table) (not-rows (table-data input-table) (restrict-table input-table cond1)))]
+    
+    [(list op arg1 arg2)
+     
+     (cond [(and (symbol? arg1) (symbol? arg2))
+            (let ([row-numb1 (hash-ref (table-col-hash input-table) arg1)]
+                  [row-numb2 (hash-ref (table-col-hash input-table) arg2)])
+              (restrict-process input-table op (lambda(vect) (vector-ref vect row-numb1)) (lambda(vect) (vector-ref vect row-numb2))))]
+           [(symbol? arg1)
+            (let ([row-numb1 (hash-ref (table-col-hash input-table) arg1)])                  
+              (restrict-process input-table op (lambda(vect) (vector-ref vect row-numb1)) (lambda(vect) arg2)))]
+           [(symbol? arg2)
+            (let ([row-numb2 (hash-ref (table-col-hash input-table) arg2)])
+              (restrict-process input-table op (lambda(vect) arg1) (lambda(vect) (vector-ref vect row-numb2))))])]
+    [else condition]))
+
+(define (restrict input condition)
+  (cond [(table? input) (restrict-table input condition)]
+        [else (restrict-table (hash-ref global-env input) condition)]))
+
+
+(define (my/> arg1 arg2)
+  (cond [(and (integer? arg1) (integer? arg2)) (> arg1 arg2)]
+        [else (list > arg1 arg2)]))
+
+(define (my/< arg1 arg2)
+  (cond [(and (integer? arg1) (integer? arg2)) (> arg1 arg2)]
+        [else (list < arg1 arg2)]))
+
+(define (my/>= arg1 arg2)
+  (cond [(and (integer? arg1) (integer? arg2)) (> arg1 arg2)]
+        [else (list >= arg1 arg2)]))
+
+(define (my/<= arg1 arg2)
+  (cond [(and (integer? arg1) (integer? arg2)) (> arg1 arg2)]
+        [else (list <= arg1 arg2)]))
+
+(define (my/= arg1 arg2)
+  (cond [(and (integer? arg1) (integer? arg2)) (> arg1 arg2)]
+        [(and (string? arg1) (string? arg2)) (string=? arg1 arg2)]
+        [(or (string? arg1) (string? arg2)) (list string=? arg1 arg2)]
+        [else (list = arg1 arg2)]))
+
+
+(define (pre-process-condition condition)
+  (match condition
+    [(list 'and cond1 cond2) (list 'and (pre-process-condition cond1) (pre-process-condition cond2))]
+    [(list 'or cond1 cond2) (list 'or (pre-process-condition cond1) (pre-process-condition cond2))]
+    [(list 'not cond) (list 'not (pre-process-condition cond))]
+    [(list '> arg1 arg2) (list > arg1 arg2)]
+    [(list '< arg1 arg2) (list < arg1 arg2)]
+    [(list '>= arg1 arg2) (list >= arg1 arg2)]
+    [(list '<= arg1 arg2) (list <= arg1 arg2)]
+    [(list '= arg1 arg2) (list my/= arg1 arg2)]
+    [else condition]))
+
+
+(define (row-equal? row1 row2)
+  (displayln row1)
+  (displayln row2)
+  (let check-next-cell([row1 (vector->list row1)][row2 (vector->list row2)])
+    (match (list row1 row2)
+      [(list '() '()) #t]
+      [(list '() el) #f]
+      [(list el '()) #f]
+      [(list (list el1 rest1 ...) (list el2 rest2 ...))
+       (cond [(my/= el1 el2) (check-next-cell rest1 rest2)]
+             [else #f])])))
+
+(define (has-row? rows row)
+  (let check-next-row([rows rows])
+    (match rows 
+      ['() #f]
+      [(list first rest ...) 
+       (cond [(row-equal? first row) #t]
+             [else (check-next-row rest)])])))
+
+
+(define (intersect-rows table1 table2)
+  (check-next-row (table-data table1) (table-data table2) '() (lambda(rows chrow) (has-row? rows chrow))))
+
+
+(define (merge-rows table1 table2)
+  (check-next-row (table-data table1) (table-data table2) (table-data table2) (lambda(rows chrow) (not(has-row? rows chrow)))))
+
+
+(define (not-rows table1 table2)
+  (check-next-row (table-data table1) (table-data table2) '() (lambda (rows chrow) (not(has-row? rows chrow)))))
+
+
+(define (check-next-row rows1 rows2 out-rows condition)
+  (match rows1
+    ['() out-rows]
+    [(list first rest ...)
+     (cond [(condition rows2 first) (check-next-row rest rows2 (cons first out-rows) condition)]
+           [else (check-next-row rest rows2 out-rows condition)])]))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Restrict  - single table
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+
+
+(define (restrict-row row col-hash condition)
+  (match condition
+    [(list 'and cond1 cond2)
+     (and (restrict-row row col-hash cond1) (restrict-row row col-hash cond2))]
+    [(list 'or cond1 cond2)
+     (or (restrict-row row col-hash cond1) (restrict-row row col-hash cond2))]
+    [(list 'not cond)
+     (not (restrict-row row col-hash cond))]
+    [(list op arg1 arg2)
+     (cond [(and (symbol? arg1) (symbol? arg2))
+            (op (vector-ref row (hash-ref col-hash arg1)) (vector-ref row (hash-ref col-hash arg2)))]
+           [(symbol? arg1)
+            (op (vector-ref row (hash-ref col-hash arg1)) arg2)]
+           [(symbol? arg2)
+            (op arg1 (vector-ref row (hash-ref col-hash arg2)))])]
+    [else condition]))
+
+(define (restrict-rows input-table condition)
+  (let check-next-row ([rows (table-data input-table)] [out-rows '()])
+    (match rows
+      ['() out-rows]
+      [(list first rest ...)
+       (cond [(restrict-row first (table-col-hash input-table) condition)
+              (check-next-row rest (cons first out-rows))]
+             [else (check-next-row rest out-rows)])])))
+
+(define (restrict-single-table input-table condition)
+  (table (table-cols input-table) (table-col-hash input-table) (restrict-rows input-table (pre-process-condition condition))))
+
+(define (restrict-single-entity input condition)
+  (cond [(symbol? input)
+         (restrict-single-table (hash-ref global-env input) condition)]
+        [else (restrict-single-table input condition)]))
