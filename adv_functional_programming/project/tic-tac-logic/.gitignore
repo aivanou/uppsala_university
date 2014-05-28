@@ -1,0 +1,12 @@
+*.pdf
+*.hi
+*.o
+tic-tac-logic
+*.html
+*.beam
+*.tix
+.hpc/
+*.aux
+*.fdb_latexmk
+*.fls
+*.log

@@ -1,0 +1,125 @@
+\documentclass[11pt, a4paper]{scrartcl}
+
+\usepackage{fullpage}
+
+\newcommand{\email}[1]{\small{#1}}
+\newcommand{\cname}[1]{\mbox{\texttt{#1}}}
+
+\title{Advanced Functional Programming}
+\subtitle{Three-sat Server}
+\author{Aliaksandr Ivanou \\ \email{Aliaksandr.Ivanou.1364@student.uu.se}
+	\and Christos Sakalis \\ \email{Christos.Sakalis.3822@student.uu.se}}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+
+The sat-server application was written mostly by Aliaksandr. Christos helped
+in the planning stage by discussing and suggesting ideas and during the code by
+doing code review.
+
+Three sat server files:
+
+\begin{enumerate}
+    \item \cname{server\_supervisor.erl}: The file represents supervisor logic.
+    \item \cname{sat\_server.erl}: The sat-listener logic.
+    \item \cname{three\_sat\_imp.erl}: The three-sat problem solving part.
+    \item \cname{three\_sat\_test.erl}: Testing of three-sat problem.
+    \item \cname{sat\_client.py}: Simple client for three sat server.
+\end{enumerate}
+
+\section{Implementation}
+
+\subsection{The supervisor}
+
+The supervisor, which is implemented in the file server\_supervisor.erl, represents the main
+process that controls the listeners. Initially, it spawns \emph{MaxPermanentListeners} + 
+\emph{MaxTemporaryListeners} + \emph{ForbiddenListeners} listen processes. It also spawns
+a scheduler process, which assigns the type to the client connection. There can be three types:
+
+\begin{enumerate}
+    \item Permanent. This is the ordinary client, which works according to the specification.
+    \item Temporary. Server will try to solve task from this client, but after 10 seconds
+        will stop trying and will close the connection.
+    \item Forbidden. Server ignores clients with this type. It sends \emph{busy} and closes the connection.
+\end{enumerate}
+
+Usual clients  will have type \emph{permanent}. But, if there are more than \emph{MaxPermanentListeners}
+simultaneous connections, clients will acquire type \emph{temporary}. According to the same logic, after 
+\emph{MaxPermanentListeners} + \emph{MaxTemporaryListeners} simultaneous connections, clients  will have type
+forbidden.
+
+The scheduler has an ets-table, which contains records about how many permanent and temporary listeners are busy
+now. Every time that a new client arrives, the listener will send \emph{acquire} signal to the scheduler, and at the end
+the listener will send a \emph{free} signal to the scheduler. The scheduler looks in the ets table and if the amount of 
+current permanent connections is less then \emph{MaxPermanentListeners}, it assigns the type \emph{permanent},
+if the amount is greater then \emph{MaxPermanentListeners}, it checks the amount of temporary connections. 
+If the amount of temporary simultaneous connections is greater then \emph{MaxTemporaryListeners}, it assigns 
+forbidden type to the client. 
+
+The supervisor uses \emph{simple\_one\_for\_one} strategy for workers. It is the most appropriate strategy, because all workers have the same type and share some arguments, so we are not required to pass directly shared arguments to the worker, the supervisor will do it for us.
+
+\subsection{Sat Server}
+
+Sat server waits for connections. The supervisor spawns method \emph{start\_link} and passes the socket, the \emph{scheduler\_pid} and a unique id as the parameters. After that, the sat server globally registers itself, based on
+unique id and calls \emph{gen\_server:start\_link}. In the init function, the listener will send asynchronous call to gen\_server. In the \emph{handle\_cast(accept)} listener will wait for the client's connection. It will 
+send message to the scheduler and will wait, while the scheduler will response withe the client type. If the type is \emph{forbidden}, it will drop the connection , terminate and call new listener. For the \emph{permanent} and \emph{temporary} connecitons, 
+heartbeat process will be spawn. This process takes care of useless connections. If client sends nothing for 60 seconds, the heartbeat will drop the connection and will initiate the stop process.
+
+Each client shares \emph{State} record among functions. This record contains next fields:
+
+\begin{enumerate}
+    \item server\_socket
+    \item client\_socket 
+    \item message  -  client's message
+    \item max\_symbols
+    \item heartbeat\_pid
+    \item scheduler\_pid
+    \item solver\_pid 
+    \item is\_busy  - true if the solver process is running, otherwise - false
+    \item type
+    \item listener\_id - unique listener id, required for global registration
+\end{enumerate}
+
+Every time, after finishing the client request, this listener will initiate the stop process. This means that 
+the method \emph{terminate} will be called at the last point. The listener will exit from the heartbeat process, will
+exit from the solution process(if there was an error during request), will send free signal to scheduler and will ask supervisor to initialize a new listener. 
+
+When a new request arrives from client, it sends \emph{new\_request} to heartbeat process. We suppose, that every client will finish its message with symbol \emph{]}, otherwise the connection will be dropped as soon as the total client's input will be greater than 1000 symbols. Client can enter multiple messages, all of them will be concatenated.
+
+When listener received the whole 3-sat formula, it spawns the solution process and continues to accept messages.
+It is necessary for receiving messages, like \emph{abort} from client.  When \emph{abort} message arrives, it will try to stop the solution process and will reply with \emph{aborted} to the client.
+
+
+\subsection{Three-sat solution}
+
+The solution process starts by calling \emph{three\_sat\_imp:solve\_sat\_problem}. This function accepts the 3sat-formula, jobs and parent\_pid. Jobs are the number of threads which will be used for solving 3-sat problem, parent\_pid is the pid to which solution will be send. At some point, function \emph{solve} will be called. 
+This function will build arguments for threads. We suppose that the amout of parallel jobs is the power of 2,
+because in this case it is quite easy to call parallel processes. The function \emph{build\_args} will create
+initial parameters for solving threads. Each thread contains next parameters:
+
+\begin{description}
+    \item[Pid] Solution will be send to this pid.
+    \item[Formuula] 3-sat formula.
+    \item[Variables] distinct variables.
+    \item[BooleanMapping] initial mapping. (if we have log2(Jobs)=2 , the BooleanMapping will store one of the four parameters: \emph{(true,true),(true,false),(false,true),(false,false)}).
+\end{description}
+
+The 3-sat problem is a NP problem, so the only solution is to use brute force algorithms. Each process will start
+with its own boolean dictionary. This dictionary will store the initial mapping for variables. The initial mapping is selected by frequency table. The number of arguments that will be mapped for every job is the log2(Jobs). 
+So, the most frequently used \emph{log2(Jobs)} variables will be mapped by true or false values. 
+For example, if 4 jobs arrived, we need to initialize first 2 arguments, let it be N1 and N2. 
+The function \emph{build\_init\_mapping} will create 4 different dictionaries \emph{(true,true),(true,false),
+(false,true),(false,false)}. 
+
+The \emph{solve} function will spawn \emph{find\_solution\_imp}. On every step \emph{find\_solution\_imp} will call evaluate function. This function tries to partially solve the 3-sat problem and simplify formula. If we will be lucky after simplification some variables will disappear and it will ease the task. After that, the \emph{run\_solution\_imp} will try to replace next variable with true value. If there was no solution, it will try to replace it with false variable. At the end, the answer will be send back to \emph{solve} function.
+
+All processes are linked, so if one process will unexpectedly die, other will stop trying to find solution and will be killed. 
+
+\subsection{Testing}
+
+The simple client was written for testing. It is in file \emph{sat\_client.py}. It spawns multple processes and sends messages to sat-server. Also, file \emph{three\_sat\_test.erl} contains properties for testing three\_sat solution.
+
+\end{document}

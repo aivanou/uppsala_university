@@ -1,0 +1,176 @@
+\documentclass[11pt, a4paper]{scrartcl}
+
+\usepackage{fullpage}
+
+\newcommand{\email}[1]{\small{#1}}
+\newcommand{\cname}[1]{\mbox{\texttt{#1}}}
+
+\title{Advanced Functional Programming}
+\subtitle{Tic-tac-logic}
+\author{Christos Sakalis \\ \email{Christos.Sakalis.3822@student.uu.se}
+    \and Aliaksandr Ivanou \\ \email{Aliaksandr.Ivanou.1364@student.uu.se}}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+
+The tic-tac-logic application was worked on mostly by Christos (me). Alex helped
+in the planning stage by having someone to bounce some ideas off and during the
+coding stage by code reviews.
+
+There are three Haskell files:
+
+\begin{enumerate}
+    \item \cname{tic-tac-logic.hs}: The file that contains the main function and
+        is responsible for IO.
+    \item \cname{Game.hs}: The Game module contains all the data types and
+        functions used for representing, accessing and solving the puzzle.
+    \item \cname{Test.hs}: The Test module contains all the tests performed on
+        the Game module.
+\end{enumerate}
+
+There is also a Makefile to make compiling the main executable and, if required,
+the test executable as well.
+
+\section{Implementation}
+
+\subsection{The Board}
+
+The game board is a square grid. Is is represented by a Map with a pair of Int
+as the key. The first member represents the row and the second the column. The
+reason we use a map is because it allows for both quick random access and quick
+modifications to the board. Haskell's arrays on the other hand are much slower
+when they need to be altered.
+
+The board also keeps a \emph{isTransposed} value. The reason we have this value is
+because we do not want to have to duplicate our functions that work on rows as
+to make them to work on columns too. Transposing the board is very cheap as it
+only changes the transposed value and exchanges the number of rows and columns.
+The actual board remains the same. The functions that are responsible for
+reading and writing marks from the board take care to read or write to the
+correct place, depending if the board is transposed or not. No other functions
+care for this value. This means that transposing the board has practically zero
+cost, while at the same time saving a lot of code and added complexity.
+
+Some of the operations we need to do in order to solve the puzzle work on rows
+or columns of the board. For that reason we also have a Row type that allows us
+to extract and work on a row on its own. Because we can transpose the board we
+do not need a type for the columns.
+
+\subsection{The Logic}
+
+There are four simple methods for solving such puzzles:
+
+\begin{enumerate}
+    \item Pairs of the same mark have to be surrounded by marks of the other
+        type
+    \item When two marks of the same type are separated by a blank, the blank
+        has to be filled with a mark of the other type
+    \item When the number of marks of one type are half the total number of
+        spaces in the row, then the remaining spaces have to be filled with the
+        other type
+    \item Checking if filling one row would cause row duplication in the board
+\end{enumerate}
+
+With the exception of the 4th method, all the other methods can be used in a row
+without knowledge of the rest of the board. Also, the first three methods do not
+require any speculation on the solver's part.
+
+The first two methods are essentially part of the same rule (no more that two
+marks of the same type next to each other) and we apply them using the same
+function. All we do is get a row and check to see if we have any triplets that
+match any of the two criteria. If we do, then we complete them.
+
+The third method is equally simple. We get a row, we count the number of Xs and
+Os and if one of them is complete them we fill the remaining spaces with the
+other one. This method comes from the rule that each row should contain an equal
+number of Xs and Os.
+
+The fourth method is not that simple because row duplication is not immediately
+obvious. Occasions where we have a row completed and another matching row with
+just two spaces left are rare. For that reason we do not explicitly use this
+method in our solver, but it is included in the speculation part.
+
+By speculation we mean trying to find a correct mark by guessing. We do not
+however do exhaustive search. Instead, we pick an empty spot on the grid and
+insert an X and O there. Then we try and complete the board with \textbf{the
+three other} methods. Finally, we check if the resulting board are valid. If one
+of the boards is not valid, then that means that the other board is the only
+valid choice available, and so we make that choice and put the mark in that
+position.
+
+It is obvious how speculation covers the row duplication method. As a matter of
+fact, it covers all the other methods as well, but we prefer to use the other
+methods first because they are much faster that just getting all the empty
+places on the grid and trying random marks on them. In the case of the row
+duplication however, the cases where a separate function would have worked are
+very few and so it is not worth the extra code and complexity added.
+
+In order to solve the puzzle, we apply the first three methods until there is
+nothing more that we they are able to do. Then, we proceed by using speculation
+on the whole board. After speculation is done, then we again use the first three
+methods etc. until no more changes can be made by any of the methods. At the
+point we stop, because either we have completed the puzzle of there is not a
+unique or valid solution to it.
+
+\section{Testing}
+
+For testing the implemented functions automated and manual testing was used.
+Specifically, QuickCheck was used for the automated testing and HUnit for
+manual. The reason for using HUnit and not QuickCheck for all the functions is
+that the many of the functions that are part of the solving logic have very
+specific input requirements. Generating random inputs and validating those
+requirements would be too hard to do. So some basic unit tests were generated to
+test that the functions are working properly.
+
+By running the tests with HPC we verified that they cover all the code we wanted
+to check. For example, we do not care about the printing functions.
+
+All the tests can be run by first compiling the \cname{Test} executable through
+\cname{make test} and then running it. The execute is not compiled automatically
+with the \cname{tic-tac-logic} one because it requires some extra Haskell
+libraries to be installed. Some language extensions are used as well.
+
+\section{Extras}
+
+Since there were no extra requirements, here are some awesome Haskell features
+that were used in the project. They were mostly used to make the code shorted,
+facilitate code reuse and thus decrease the number of mistakes made.
+
+\begin{description}
+    \item[Records] Records are nothing but tuples in Haskell, but allow named
+        access of their members. More importantly, they allow for the creation
+        of new records based on existing ones by altering only the members we
+        want and having the rest being copied automatically.
+    \item[Instances] The only derived instance used is for having the boards
+        being compared automatically. We have implemented our own instances for
+        comparing and printing rows as well as printing boards. In the testing
+        module, we use instances of Arbitrary for generating random boards.
+    \item[Extensions] There is a number of language extensions supported by GHC.
+        We use them in testing for two reasons. First of all, it allows us to
+        declare instances of type aliases, which is not normally allowed in
+        Haskell. Second, running all the prop\_ QuickCheck tests automatically
+        requires the template Haskell metaprogramming extension.
+    \item[Flexible Syntax] Function composition, the low precedence bind
+        operator and partial bound functions allow the code to be much more
+        compact.
+    \item[Laziness] Many of the functions are much simpler because of laziness.
+        For example, isRowValid liberally uses list manipulation functions
+        that affect the whole list even though we want to stop after the first
+        mismatch. Because of laziness these functions might never access the
+        whole list.
+    \item[Type System] All the functions have type annotations. This not only
+        helps the programmer make less mistakes but also works as partial
+        documentation as to what the function does.
+    \item[HPC] Haskell Program Coverage assures us that our test cases
+        cover the functions we wanted to check.
+\end{description}
+
+\end{document}
+
+who did what
+description
+test
+extras
